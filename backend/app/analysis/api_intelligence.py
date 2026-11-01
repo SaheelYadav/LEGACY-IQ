@@ -204,9 +204,9 @@ def extract_api_endpoints_from_code(
         router_prefix = prefix_match.group(1) if prefix_match else None
 
         py_route_re = re.compile(
-            r"@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|delete|patch|route)\s*\(\s*['\"]([^'\"]+)['\"]([^)]*)\)\s*"
+            r"@([A-Za-z_][A-Za-z0-9_]*)\.(get|post|put|delete|patch|route)\s*\(\s*['\"]([^'\"]+)['\"]((?:[^()]|\([^()]*\))*)\)\s*"
             r"(?:@[^\n]+\n\s*)*"
-            r"(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)(?:\s*->\s*([^\n:]+))?\s*:",
+            r"(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(((?:[^()]|\([^()]*\))*)\)(?:\s*->\s*([^\n:]+))?\s*:",
             re.IGNORECASE | re.DOTALL,
         )
         for m in py_route_re.finditer(source_text):

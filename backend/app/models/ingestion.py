@@ -216,6 +216,11 @@ class RepositorySnapshot(Base, TenantScopedMixin):
         nullable=False,
     )
 
+    @property
+    def snapshot_label(self) -> str:
+        """Human-readable label for the immutable snapshot."""
+        return f"snapshot-{self.snapshot_number}"
+
 
 class Artifact(Base, TenantScopedMixin, CreatedAtMixin):
     """C6. Logical artifact identity across snapshots (`TENANT_DIRECT`)."""

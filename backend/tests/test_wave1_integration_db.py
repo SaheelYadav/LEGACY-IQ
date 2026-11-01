@@ -63,7 +63,13 @@ def test_postgres_33_tables_indexes_triggers_and_rls_enabled() -> None:
         assert len(tables) >= 33
 
         rev = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert rev in ("0003_wave1_rls_vec", "0004_wave2_tech_intel")
+        assert rev in (
+            "0003_wave1_rls_vec",
+            "0004_wave2_tech_intel",
+            "0005_wave3_biz_reqs",
+            "0006_wave4_test_risk_mod",
+            "0007_wave5_qa_reports_export",
+        )
 
         indexes = set(
             db.execute(

@@ -27,10 +27,11 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: "Overview", href: "/", icon: Home, stage: "Wave 1 Live" },
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, stage: "Wave 1 Live" },
+  { name: "Intelligence Hub", href: "/dashboard", icon: LayoutDashboard, stage: "Wave 5 Live" },
   { name: "Repositories", href: "/repositories", icon: FolderGit2, stage: "Wave 1 Live" },
-  { name: "Requirements", href: "/requirements", icon: FileCheck2, stage: "Planned W2+" },
-  { name: "Architecture", href: "/architecture", icon: Network, stage: "Wave 1 Live" },
+  { name: "Architecture", href: "/architecture", icon: Network, stage: "Wave 2 Live" },
+  { name: "Requirements", href: "/requirements", icon: FileCheck2, stage: "Wave 3 Live" },
+  { name: "Quality & Modernization", href: "/modernization", icon: ShieldCheck, stage: "Wave 4 Live" },
   { name: "Settings", href: "/settings", icon: Settings, stage: "Wave 1 Config" },
 ];
 

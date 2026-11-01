@@ -341,4 +341,22 @@ class BootstrapContextResponse(BaseModel):
     default_repository_id: uuid.UUID
     default_repository_name: str
     latest_snapshot_id: uuid.UUID | None
+    access_token: str | None = None
+    token_type: str = "Bearer"
+    expires_in_seconds: int = 3600
+
+
+class AuthTokenRequest(BaseModel):
+    tenant_id: uuid.UUID
+    user_id: uuid.UUID
+
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "Bearer"
+    expires_in_seconds: int
+    tenant_id: uuid.UUID
+    user_id: uuid.UUID
+    role_code: str
+
 

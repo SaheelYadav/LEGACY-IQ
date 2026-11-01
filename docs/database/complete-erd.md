@@ -1001,6 +1001,11 @@ erDiagram
     organizations ||--o{ deletion_requests : "tracks erasure workflows"
     organizations ||--|| tenant_subscriptions : "subscribed plan"
     organizations ||--o{ tenant_usage_quotas : "meters period usage"
+    projects ||--o{ qa_conversations : "hosts Q&A sessions"
+    qa_conversations ||--o{ qa_messages : "contains messages"
+    projects ||--o{ intelligence_reports : "generates reports"
+    intelligence_reports ||--o{ intelligence_report_versions : "versions (APPROVED immutable)"
+    intelligence_report_versions ||--o{ report_exports : "exports PDF/DOCX/XLSX/JSON"
 
     audit_logs {
         uuid tenant_id PK,FK
@@ -1076,6 +1081,80 @@ erDiagram
         bigint cloud_llm_tokens_used
         bigint object_storage_bytes_used
         timestamptz updated_at
+    }
+
+    qa_conversations {
+        uuid tenant_id PK,FK
+        uuid id PK
+        uuid project_id FK
+        uuid application_id FK
+        uuid snapshot_id FK
+        uuid created_by_user_id FK
+        varchar title
+        varchar conversation_status "ACTIVE | ARCHIVED"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    qa_messages {
+        uuid tenant_id PK,FK
+        uuid id PK
+        uuid conversation_id FK
+        uuid snapshot_id FK
+        integer sequence_no "UK(tenant_id, conversation_id, sequence_no)"
+        varchar role "USER | ASSISTANT"
+        varchar question_intent
+        text content_markdown
+        jsonb direct_facts_json
+        jsonb inferred_explanations_json
+        jsonb citations_json
+        boolean insufficient_evidence
+        numeric_5_4 confidence_score
+        timestamptz created_at
+    }
+
+    intelligence_reports {
+        uuid tenant_id PK,FK
+        uuid id PK
+        uuid project_id FK
+        uuid application_id FK
+        uuid snapshot_id FK
+        varchar report_type "11 canonical report types"
+        varchar title
+        integer current_version_no
+        varchar lifecycle_status "DRAFT | GENERATED | SUBMITTED_FOR_REVIEW | APPROVED | REJECTED | ARCHIVED"
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    intelligence_report_versions {
+        uuid tenant_id PK,FK
+        uuid id PK
+        uuid report_id FK
+        uuid snapshot_id FK
+        integer version_no "UK(tenant_id, report_id, version_no)"
+        varchar lifecycle_status
+        boolean is_immutable "true once APPROVED"
+        text executive_summary_markdown
+        jsonb sections_json
+        jsonb evidence_refs_json
+        char_64 content_sha256
+        timestamptz created_at
+    }
+
+    report_exports {
+        uuid tenant_id PK,FK
+        uuid id PK
+        uuid project_id FK
+        uuid report_id FK
+        uuid report_version_id FK
+        varchar export_format "PDF | DOCX | XLSX | JSON"
+        varchar file_name
+        bigint file_size_bytes
+        char_64 content_sha256
+        text storage_object_uri
+        integer download_count
+        timestamptz created_at
     }
 ```
 

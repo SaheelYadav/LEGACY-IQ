@@ -410,6 +410,20 @@ class FindingEvidenceLink(Base, TenantScopedMixin):
             ondelete="CASCADE",
             name="fk_finding_evidence_links_relationship",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "business_rule_id"],
+            ["business_rules.tenant_id", "business_rules.id"],
+            match="SIMPLE",
+            ondelete="CASCADE",
+            name="fk_finding_evidence_links_business_rule",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "requirement_id"],
+            ["requirements.tenant_id", "requirements.id"],
+            match="SIMPLE",
+            ondelete="CASCADE",
+            name="fk_finding_evidence_links_requirement",
+        ),
     )
 
     evidence_anchor_id: Mapped[UUID] = mapped_column(Uuid, nullable=False)

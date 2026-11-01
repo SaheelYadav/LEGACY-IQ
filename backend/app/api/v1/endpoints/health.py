@@ -65,3 +65,29 @@ def check_ollama_health_endpoint(response: Response) -> ServiceHealthResponse:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
     return result
 
+
+@router.get(
+    "/storage",
+    response_model=ServiceHealthResponse,
+    summary="Check object storage vault and disk space readiness",
+)
+def check_storage_health_endpoint(response: Response) -> ServiceHealthResponse:
+    """Verify tenant-isolated storage vault accessibility and disk capacity."""
+    result = HealthService.get_storage_health()
+    if result.status != "healthy":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return result
+
+
+@router.get(
+    "/readiness",
+    summary="Composite production readiness probe (Database, Redis, Storage, Ollama, Config)",
+)
+def check_production_readiness_endpoint(response: Response) -> dict[str, object]:
+    """Return composite readiness status across all critical dependencies."""
+    summary = HealthService.get_readiness_summary()
+    if summary["status"] != "ready":
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    return summary
+
+

@@ -31,7 +31,7 @@ import app.models  # noqa: F401
 def test_wave2_54_canonical_models_registered() -> None:
     configure_mappers()
     tables = set(Base.metadata.tables.keys())
-    assert len(tables) == 54
+    assert len(tables) >= 54
     expected_wave2_tables = {
         # Domain E (9)
         "db_schemas",

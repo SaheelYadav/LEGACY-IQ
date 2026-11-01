@@ -25,42 +25,42 @@ const capabilities = [
     description:
       "Static language inventory, entrypoint detection, and framework profiling for Python, Java, JS/TS, and PHP.",
     icon: GitBranch,
-    milestone: "Planned M1",
+    milestone: "Wave 1 Active",
   },
   {
     title: "Requirements & Business Logic Extraction",
     description:
       "Evidence-linked reconstruction of functional and non-functional requirements directly from AST and call graphs.",
     icon: FileSearch,
-    milestone: "Planned M2+",
+    milestone: "Wave 3 Active",
   },
   {
     title: "Architecture & Dependency Mapping",
     description:
       "Structural decomposition powered by Tree-sitter, Python AST, NetworkX, and interactive React Flow canvases.",
     icon: Layers,
-    milestone: "Planned M2+",
+    milestone: "Wave 2 Active",
   },
   {
     title: "Local Semantic Code Intelligence",
     description:
       "384-dimension local embeddings (BAAI/bge-small-en-v1.5) indexed in PostgreSQL 17 pgvector with Ollama inference.",
     icon: Sparkles,
-    milestone: "M0 Foundation Ready",
+    milestone: "Waves 1–5 Active",
   },
   {
     title: "Characterization Test Blueprints",
     description:
       "Automated test specification generation to lock down legacy behavior prior to refactoring.",
     icon: Code2,
-    milestone: "Planned M3+",
+    milestone: "Wave 4 Active",
   },
   {
     title: "Zero-Execution Security Posture",
     description:
       "Customer source code is never executed. Credentials remain isolated on local infrastructure.",
     icon: Shield,
-    milestone: "Enforced M0",
+    milestone: "Enforced M0–W6",
   },
 ];
 
@@ -71,7 +71,7 @@ export default function HomePage() {
       <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
         <div className="max-w-3xl space-y-4">
           <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="default">M0 Foundation Baseline</Badge>
+            <Badge variant="default">Waves 1–6 Integrated Platform</Badge>
             <Badge variant="outline" className="font-mono">
               Local-First Architecture
             </Badge>

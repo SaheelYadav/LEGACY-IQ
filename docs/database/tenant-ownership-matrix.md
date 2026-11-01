@@ -32,11 +32,11 @@ LegacyIQ operates on a shared PostgreSQL 17 cluster with **Defense-in-Depth Tena
 | Ownership Class | Table Count | `tenant_id` Column | RLS Policy Type | Description |
 | :--- | :---: | :---: | :--- | :--- |
 | **`TENANT_ROOT`** | 1 | `id` *is* tenant root | `id = app_current_tenant_id()` | `organizations` table. |
-| **`TENANT_DIRECT`** | 64 | `UUID NOT NULL` (Part of PK) | `tenant_id = app_current_tenant_id()` | Strictly owned by a single organization; all intra-tenant FKs are composite `(tenant_id, ...)`. |
+| **`TENANT_DIRECT`** | 69 | `UUID NOT NULL` (Part of PK) | `tenant_id = app_current_tenant_id()` | Strictly owned by a single organization; all intra-tenant FKs are composite `(tenant_id, ...)`. |
 | **`HYBRID_CATALOG`** | 2 | `UUID NULL` | `tenant_id IS NULL OR tenant_id = app_current_tenant_id()` | `roles` and `prompt_templates` (system defaults have `tenant_id IS NULL`; tenant custom entries have `tenant_id = <org_id>`). |
 | **`GLOBAL_SYSTEM`** | 4 | None | Read-only or Membership-scoped | `users` (scoped via `organization_memberships`), `permissions`, `role_permissions`, `embedding_model_versions`. |
 
-*(Total = **71 canonical tables** across Domains A–K.)*
+*(Total = **76 canonical tables** across Domains A–K, with **72 RLS-forced tables**.)*
 
 ---
 
@@ -109,12 +109,17 @@ LegacyIQ operates on a shared PostgreSQL 17 cluster with **Defense-in-Depth Tena
 | 63 | **J** | `embedding_model_versions` | `GLOBAL_SYSTEM` | `(id)` | Global read-only catalog | Read-Only | Retained permanently |
 | 64 | **J** | `document_chunks` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id, artifact_version_id) -> artifact_versions` | **YES** | Cascades on `artifact_versions` purge |
 | 65* | **J** | `artifact_embeddings` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id, document_chunk_id) -> document_chunks` | **YES** | Cascades on `document_chunks` purge |
-| 66* | **K** | `audit_logs` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** (Append-Only) | Retained per compliance policy; exported/archived on tenant offboarding |
-| 67* | **K** | `approval_requests` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `organizations` & `projects` | **YES** | Retained with audit history |
-| 68* | **K** | `retention_policies` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Cascades on tenant purge |
-| 69* | **K** | `deletion_requests` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Tombstone certificate retained after purge |
-| 70* | **K** | `tenant_subscriptions` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Retained for commercial/billing archive |
-| 71* | **K** | `tenant_usage_quotas` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Retained for commercial/billing archive |
+| 66 | **K** | `qa_conversations` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `projects`, `applications`, `repository_snapshots` | **YES** | Cascades on project/snapshot purge |
+| 67 | **K** | `qa_messages` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FK to `qa_conversations` | **YES** | Cascades on conversation purge |
+| 68 | **K** | `intelligence_reports` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `projects`, `applications`, `repository_snapshots` | **YES** | Cascades on project/snapshot purge |
+| 69 | **K** | `intelligence_report_versions` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `intelligence_reports` & `repository_snapshots` | **YES** (`APPROVED` Immutable) | Cascades on report purge |
+| 70 | **K** | `report_exports` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `projects`, `intelligence_reports`, `intelligence_report_versions` | **YES** | Cascades on report purge |
+| 71 | **K** | `audit_logs` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** (Append-Only) | Retained per compliance policy; exported/archived on tenant offboarding |
+| 72 | **K** | `approval_requests` | `TENANT_DIRECT` | `(tenant_id, id)` | Composite FKs to `organizations` & `projects` | **YES** | Retained with audit history |
+| 73 | **K** | `retention_policies` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Cascades on tenant purge |
+| 74 | **K** | `deletion_requests` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Tombstone certificate retained after purge |
+| 75 | **K** | `tenant_subscriptions` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Retained for commercial/billing archive |
+| 76 | **K** | `tenant_usage_quotas` | `TENANT_DIRECT` | `(tenant_id, id)` | `FK(tenant_id) -> organizations(id)` | **YES** | Retained for commercial/billing archive |
 
-*(Note: Rows 1–71 list all 64 domain tables plus sub-entities itemized in Domain E, G, and I; specifically: Domain A=8, B=6, C=8, D=7, E=9, F=7, G=6, H=5, I=6, J=3, K=6, totaling **71 physical tables** covering every required domain entity.)*
+*(Note: Rows 1–76 list all 76 physical tables across Domains A–K: Domain A=8, B=6, C=8, D=7, E=9, F=7, G=6, H=5, I=6, J=3, K=11, totaling **76 physical tables** and **72 RLS-forced tables**.)*
 

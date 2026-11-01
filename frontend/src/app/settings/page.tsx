@@ -48,7 +48,7 @@ export default function SettingsPage() {
             Settings &amp; Environment Configuration
           </h1>
           <Badge variant="outline" className="font-mono">
-            M0 Configuration
+            Waves 1–6 Runtime
           </Badge>
         </div>
         <p className="text-sm text-slate-600 mt-1">

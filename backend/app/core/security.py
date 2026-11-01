@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 import json
 from pathlib import Path
+import time
 from typing import Any
 import uuid
 
+import jwt
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -38,6 +40,13 @@ class SecurityViolationError(PermissionError):
     """Raised when tenant isolation, RBAC, or path boundary checks fail."""
 
 
+_PERMISSION_ALIASES: dict[str, tuple[str, ...]] = {
+    "project:read": ("project:view",),
+    "project:write": ("analysis:run", "repo:ingest"),
+    "finding:review": ("analysis:run",),
+}
+
+
 @dataclass(frozen=True)
 class TenantContext:
     """
@@ -55,7 +64,12 @@ class TenantContext:
 
     def has_permission(self, permission_code: str) -> bool:
         """Check whether the user's organization-level role grants a permission."""
-        return permission_code in self.permissions or self.org_role_code == "ORG_OWNER"
+        if self.org_role_code == "ORG_OWNER" or permission_code in self.permissions:
+            return True
+        for alias in _PERMISSION_ALIASES.get(permission_code, ()):
+            if alias in self.permissions:
+                return True
+        return False
 
 
 @dataclass(frozen=True)
@@ -69,10 +83,15 @@ class ProjectAccessContext:
     effective_permissions: frozenset[str] = field(default_factory=frozenset)
 
     def has_permission(self, permission_code: str) -> bool:
-        return (
-            permission_code in self.effective_permissions
-            or self.effective_role_code == "ORG_OWNER"
-        )
+        if (
+            self.effective_role_code == "ORG_OWNER"
+            or permission_code in self.effective_permissions
+        ):
+            return True
+        for alias in _PERMISSION_ALIASES.get(permission_code, ()):
+            if alias in self.effective_permissions:
+                return True
+        return False
 
 
 def validate_safe_extract_path(base_dir: Path, target_path: Path) -> Path:
@@ -145,7 +164,9 @@ class TaskEnvelope:
 
     @staticmethod
     def _sign_dict(data: dict[str, Any]) -> str:
-        secret = f"{settings.APP_NAME}:{settings.APP_ENV}:task-hmac-key".encode("utf-8")
+        secret = f"{settings.APP_SECRET_KEY}:{settings.APP_NAME}:{settings.APP_ENV}:task-hmac-key".encode(
+            "utf-8"
+        )
         canonical = json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
         return hmac.new(secret, canonical, hashlib.sha256).hexdigest()
 
@@ -161,6 +182,95 @@ class TaskEnvelope:
         }
         expected = self._sign_dict(unsigned)
         return hmac.compare_digest(self.signature, expected)
+
+
+JWT_ALGORITHM = "HS256"
+JWT_ISSUER = "legacyiq-platform"
+
+
+def create_access_token(
+    *,
+    user_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    role_code: str = "ORG_OWNER",
+    expires_delta_minutes: int | None = None,
+) -> str:
+    """
+    Generate a signed JWT access token bound to `(sub=user_id, tid=tenant_id, role=role_code)`
+    with expiration (`exp`), issued-at (`iat`), and unique token ID (`jti`).
+    """
+    now = datetime.now(timezone.utc)
+    exp_minutes = (
+        expires_delta_minutes
+        if expires_delta_minutes is not None
+        else settings.AUTH_TOKEN_EXPIRE_MINUTES
+    )
+    payload = {
+        "iss": JWT_ISSUER,
+        "sub": str(user_id),
+        "tid": str(tenant_id),
+        "role": role_code,
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=exp_minutes)).timestamp()),
+        "jti": str(uuid.uuid4()),
+    }
+    return str(
+        jwt.encode(payload, settings.APP_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    )
+
+
+def verify_access_token(token: str) -> dict[str, Any]:
+    """
+    Validate a JWT access token signature, issuer, and expiration (`exp`).
+    Raises `SecurityViolationError` if invalid, tampered, or expired.
+    """
+    try:
+        decoded = jwt.decode(
+            token,
+            settings.APP_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+            issuer=JWT_ISSUER,
+            options={"require": ["exp", "iat", "sub", "tid"]},
+        )
+        return dict(decoded)
+    except jwt.ExpiredSignatureError as exc:
+        raise SecurityViolationError("Authentication token has expired.") from exc
+    except jwt.InvalidTokenError as exc:
+        raise SecurityViolationError(f"Invalid authentication token: {exc}") from exc
+
+
+class SlidingWindowRateLimiter:
+    """
+    Local-first sliding-window rate limiter keyed by `(tenant/IP, bucket)` with
+    automatic in-memory fallback when Redis is unreachable.
+    """
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, list[float]] = {}
+
+    def check_rate_limit(
+        self,
+        key: str,
+        *,
+        limit: int,
+        window_seconds: int = 60,
+    ) -> tuple[bool, int]:
+        """Return `(allowed, remaining_quota)` within `window_seconds`."""
+        now = time.monotonic()
+        cutoff = now - window_seconds
+        timestamps = [ts for ts in self._buckets.get(key, []) if ts > cutoff]
+        if len(timestamps) >= limit:
+            self._buckets[key] = timestamps
+            return False, 0
+        timestamps.append(now)
+        self._buckets[key] = timestamps
+        return True, max(0, limit - len(timestamps))
+
+    def reset(self) -> None:
+        self._buckets.clear()
+
+
+rate_limiter = SlidingWindowRateLimiter()
 
 
 def _load_role_permissions(

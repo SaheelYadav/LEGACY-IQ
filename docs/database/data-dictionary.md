@@ -1256,7 +1256,7 @@
 
 ---
 
-## Domain K: Governance, Audit & SaaS Commercials (6 Tables)
+## Domain K: Reporting, Semantic Q&A, Export Governance, Audit & SaaS Commercials (11 Tables)
 
 ### K1. `audit_logs`
 - **Purpose**: **Tamper-evident, append-only compliance ledger** recording security-sensitive and governance actions across the tenant.
@@ -1369,4 +1369,96 @@
 | `cloud_llm_tokens_used` | `BIGINT` | NO | `DEFAULT 0` | Tokens processed via cloud providers. |
 | `object_storage_bytes_used` | `BIGINT` | NO | `DEFAULT 0` | Encrypted blob storage footprint. |
 | `updated_at` | `TIMESTAMPTZ` | NO | `DEFAULT now()` | Last meter update timestamp. |
+
+### K7. `qa_conversations`
+- **Purpose**: Tenant-, project-, and snapshot-scoped conversational Semantic Q&A sessions.
+- **Tenant Ownership**: Direct `tenant_id`.
+- **PK**: `(tenant_id, id)`
+
+| Column | Type | Null | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `UUID` | NO | `PK, FK` | Owning organization. |
+| `id` | `UUID` | NO | `PK` | Conversation ID. |
+| `project_id` | `UUID` | NO | `FK -> projects` | Project RBAC boundary. |
+| `application_id` | `UUID` | NO | `FK -> applications` | Target application. |
+| `snapshot_id` | `UUID` | NO | `FK -> repository_snapshots` | Grounded repository snapshot. |
+| `created_by_user_id` | `UUID` | YES | `FK -> users(id)` | Creator user. |
+| `title` | `VARCHAR(255)` | NO | | Session title. |
+| `conversation_status` | `VARCHAR(32)` | NO | `DEFAULT 'ACTIVE'` | `'ACTIVE' \| 'ARCHIVED'`. |
+
+### K8. `qa_messages`
+- **Purpose**: User questions and assistant responses within a `qa_conversations` session, separating `direct_facts_json` from `inferred_explanations_json` and storing source `citations_json`.
+- **Tenant Ownership**: Direct `tenant_id`.
+- **PK**: `(tenant_id, id)` | **UK**: `(tenant_id, conversation_id, sequence_no)`
+
+| Column | Type | Null | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `UUID` | NO | `PK, FK` | Owning organization. |
+| `id` | `UUID` | NO | `PK` | Message ID. |
+| `conversation_id` | `UUID` | NO | `FK -> qa_conversations` | Parent conversation. |
+| `snapshot_id` | `UUID` | NO | `FK -> repository_snapshots` | Snapshot context. |
+| `sequence_no` | `INTEGER` | NO | `UK` | 1-based message order. |
+| `role` | `VARCHAR(32)` | NO | | `'USER' \| 'ASSISTANT'`. |
+| `question_intent` | `VARCHAR(64)` | YES | | Classified query intent (`ARCHITECTURE_DISCOVERY`, etc.). |
+| `content_markdown` | `TEXT` | NO | | Grounded markdown message. |
+| `direct_facts_json` | `JSONB` | NO | `DEFAULT '[]'` | Persisted facts separated from inference. |
+| `inferred_explanations_json` | `JSONB` | NO | `DEFAULT '[]'` | Inferred explanations and review posture. |
+| `citations_json` | `JSONB` | NO | `DEFAULT '[]'` | File path, line range, SHA-256, and excerpt citations. |
+| `insufficient_evidence` | `BOOLEAN` | NO | `DEFAULT false` | `true` when snapshot lacks supporting evidence. |
+
+### K9. `intelligence_reports`
+- **Purpose**: Master record for any of the 11 structured application intelligence report types.
+- **Tenant Ownership**: Direct `tenant_id`.
+- **PK**: `(tenant_id, id)`
+
+| Column | Type | Null | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `UUID` | NO | `PK, FK` | Owning organization. |
+| `id` | `UUID` | NO | `PK` | Report ID. |
+| `project_id` | `UUID` | NO | `FK -> projects` | Project RBAC boundary. |
+| `application_id` | `UUID` | NO | `FK -> applications` | Target application. |
+| `snapshot_id` | `UUID` | NO | `FK -> repository_snapshots` | Target snapshot. |
+| `report_type` | `VARCHAR(64)` | NO | | One of the 11 canonical `REPORT_TYPE_CATALOG` keys. |
+| `title` | `VARCHAR(255)` | NO | | Report title. |
+| `current_version_no` | `INTEGER` | NO | `DEFAULT 1` | Active version number. |
+| `lifecycle_status` | `VARCHAR(32)` | NO | `DEFAULT 'GENERATED'` | `'DRAFT' \| 'GENERATED' \| 'SUBMITTED_FOR_REVIEW' \| 'APPROVED' \| 'REJECTED' \| 'ARCHIVED'`. |
+
+### K10. `intelligence_report_versions`
+- **Purpose**: Versioned report payloads. Once `lifecycle_status = 'APPROVED'`, `is_immutable = true` is permanently locked; subsequent edits create `version_no + 1`.
+- **Tenant Ownership**: Direct `tenant_id`.
+- **PK**: `(tenant_id, id)` | **UK**: `(tenant_id, report_id, version_no)`
+
+| Column | Type | Null | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `UUID` | NO | `PK, FK` | Owning organization. |
+| `id` | `UUID` | NO | `PK` | Report Version ID. |
+| `report_id` | `UUID` | NO | `FK -> intelligence_reports` | Parent report. |
+| `snapshot_id` | `UUID` | NO | `FK -> repository_snapshots` | Source snapshot. |
+| `version_no` | `INTEGER` | NO | `UK` | Monotonic version number (`1, 2, ...`). |
+| `lifecycle_status` | `VARCHAR(32)` | NO | | Version lifecycle status. |
+| `is_immutable` | `BOOLEAN` | NO | `DEFAULT false` | `true` for `APPROVED` versions (never overwritten). |
+| `executive_summary_markdown` | `TEXT` | NO | | Executive summary. |
+| `sections_json` | `JSONB` | NO | `DEFAULT '[]'` | Structured report sections. |
+| `evidence_refs_json` | `JSONB` | NO | `DEFAULT '[]'` | Evidence anchor citations. |
+| `content_sha256` | `CHAR(64)` | NO | | Cryptographic digest of canonical report content. |
+
+### K11. `report_exports`
+- **Purpose**: Controlled multi-format export artifacts (`PDF`, `DOCX`, `XLSX`, `JSON`) with tenant storage isolation, download tracking, and `AuditLog` linkage.
+- **Tenant Ownership**: Direct `tenant_id`.
+- **PK**: `(tenant_id, id)`
+
+| Column | Type | Null | Constraints / Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `tenant_id` | `UUID` | NO | `PK, FK` | Owning organization. |
+| `id` | `UUID` | NO | `PK` | Export ID. |
+| `project_id` | `UUID` | NO | `FK -> projects` | Project RBAC boundary. |
+| `report_id` | `UUID` | NO | `FK -> intelligence_reports` | Exported report. |
+| `report_version_id` | `UUID` | NO | `FK -> intelligence_report_versions` | Exact exported report version. |
+| `export_format` | `VARCHAR(16)` | NO | | `'PDF' \| 'DOCX' \| 'XLSX' \| 'JSON'`. |
+| `file_name` | `VARCHAR(255)` | NO | | Generated attachment filename. |
+| `file_size_bytes` | `BIGINT` | NO | | Export artifact byte size. |
+| `content_sha256` | `CHAR(64)` | NO | | SHA-256 of exported binary. |
+| `storage_object_uri` | `TEXT` | NO | | Tenant-isolated blob URI. |
+| `download_count` | `INTEGER` | NO | `DEFAULT 0` | Metered download counter. |
+
 

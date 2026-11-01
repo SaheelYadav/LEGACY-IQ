@@ -6,10 +6,13 @@ import hashlib
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+import shutil
+from typing import Any
 
+from app.core.config import settings
 from app.core.security import validate_safe_extract_path
 
-DEFAULT_VAULT_ROOT = Path(__file__).resolve().parents[2] / "storage_vault"
+DEFAULT_VAULT_ROOT = Path(settings.STORAGE_VAULT_ROOT).resolve()
 
 
 @dataclass(frozen=True)
@@ -81,4 +84,37 @@ class TenantObjectStorage:
 
     def blob_exists(self, tenant_id: uuid.UUID | str, sha256_hex: str) -> bool:
         return self._blob_path(tenant_id, sha256_hex).exists()
+
+    def get_storage_metrics(self) -> dict[str, Any]:
+        """Return disk space and tenant vault blob statistics for observability."""
+        try:
+            usage = shutil.disk_usage(self.vault_root)
+            tenant_dirs = [
+                p for p in self.vault_root.iterdir() if p.is_dir()
+            ]
+            return {
+                "status": "healthy",
+                "service": "storage",
+                "latency_ms": 0.1,
+                "details": {
+                    "vault_root": str(self.vault_root),
+                    "tenant_vault_count": len(tenant_dirs),
+                    "disk_total_gb": round(usage.total / (1024**3), 2),
+                    "disk_used_gb": round(usage.used / (1024**3), 2),
+                    "disk_free_gb": round(usage.free / (1024**3), 2),
+                    "disk_free_pct": round((usage.free / usage.total) * 100, 2)
+                    if usage.total
+                    else 0.0,
+                },
+                "error": None,
+            }
+        except Exception as exc:
+            return {
+                "status": "unhealthy",
+                "service": "storage",
+                "latency_ms": None,
+                "details": {"vault_root": str(self.vault_root)},
+                "error": f"{type(exc).__name__}: {str(exc)}",
+            }
+
 

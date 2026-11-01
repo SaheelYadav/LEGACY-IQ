@@ -11,7 +11,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_tenant_context
-from app.core.security import TenantContext
+from app.core.security import (
+    SecurityViolationError,
+    TenantContext,
+    verify_project_access,
+)
 from app.db.session import activate_tenant_rls
 from app.models.agent_orchestration import (
     AgentExecutionEvent,
@@ -20,7 +24,7 @@ from app.models.agent_orchestration import (
     ModelInvocation,
 )
 from app.models.code_intelligence import AnalysisRun
-from app.models.ingestion import Artifact, ArtifactVersion, RepositorySnapshot
+from app.models.ingestion import Artifact, ArtifactVersion, Repository, RepositorySnapshot
 from app.models.knowledge_graph import (
     EvidenceAnchor,
     Finding,
@@ -30,6 +34,7 @@ from app.models.knowledge_graph import (
     KnowledgeRelationship,
     ReviewHistory,
 )
+from app.models.projects import Application
 from app.models.technical_intelligence import (
     ApiEndpoint,
     ApiService,
@@ -56,6 +61,52 @@ class FindingReviewRequest(BaseModel):
     updated_statement_markdown: str | None = None
 
 
+def _verify_snapshot_project_access(
+    db: Session,
+    *,
+    ctx: TenantContext,
+    snapshot_id: uuid.UUID,
+    required_permission: str = "project:read",
+) -> tuple[RepositorySnapshot, uuid.UUID]:
+    """Resolve snapshot -> repository -> application -> project and enforce project-level RBAC."""
+    row = db.execute(
+        select(RepositorySnapshot, Application.project_id)
+        .join(
+            Repository,
+            (Repository.tenant_id == RepositorySnapshot.tenant_id)
+            & (Repository.id == RepositorySnapshot.repository_id),
+        )
+        .join(
+            Application,
+            (Application.tenant_id == Repository.tenant_id)
+            & (Application.id == Repository.application_id),
+        )
+        .where(
+            RepositorySnapshot.tenant_id == ctx.tenant_id,
+            RepositorySnapshot.id == snapshot_id,
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Snapshot not found.",
+        )
+    snap, proj_id = row
+    try:
+        verify_project_access(
+            db,
+            tenant_context=ctx,
+            project_id=proj_id,
+            required_permission=required_permission,
+        )
+    except SecurityViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    return snap, proj_id
+
+
 @router.post("/snapshots/{snapshot_id}/analyze-wave2")
 def analyze_snapshot_wave2(
     snapshot_id: uuid.UUID,
@@ -63,6 +114,12 @@ def analyze_snapshot_wave2(
 ) -> dict[str, Any]:
     """Run or refresh the Wave 2 Technical Intelligence, Unified Knowledge Graph & Agent Orchestration pipeline."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(
+        db,
+        ctx=ctx,
+        snapshot_id=snapshot_id,
+        required_permission="analysis:run",
+    )
     service = TechnicalIntelligenceService()
     try:
         summary = service.run_wave2_pipeline(
@@ -101,6 +158,7 @@ def get_snapshot_database_intelligence(
 ) -> dict[str, Any]:
     """Return discovered SQL/ORM schemas, tables, columns, and foreign-key relationships for a snapshot."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     schemas = (
         db.execute(
             select(DbSchema).where(
@@ -225,6 +283,7 @@ def get_snapshot_api_intelligence(
 ) -> dict[str, Any]:
     """Return discovered REST, OpenAPI/Swagger, and GraphQL services and endpoints for a snapshot."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     services = (
         db.execute(
             select(ApiService).where(
@@ -292,6 +351,7 @@ def get_snapshot_infrastructure_intelligence(
 ) -> dict[str, Any]:
     """Return discovered Dockerfile, Docker Compose, Kubernetes, Terraform, and CloudFormation resources."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     resources = (
         db.execute(
             select(InfraResource).where(
@@ -325,14 +385,7 @@ def get_snapshot_documentation_intelligence(
 ) -> dict[str, Any]:
     """Return hierarchical documentation sections extracted from Markdown, HTML, DOCX, XLSX, and PDF files."""
     db, ctx = ctx_pair
-    snap = db.execute(
-        select(RepositorySnapshot).where(
-            RepositorySnapshot.tenant_id == ctx.tenant_id,
-            RepositorySnapshot.id == snapshot_id,
-        )
-    ).scalar_one_or_none()
-    if snap is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Snapshot not found")
+    snap, _ = _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
 
     rows = db.execute(
         select(DocSection, Artifact.canonical_path)
@@ -383,6 +436,7 @@ def get_snapshot_knowledge_graph(
 ) -> dict[str, Any]:
     """Return Unified Knowledge Graph entities, relationships, and provenance counts for a snapshot."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     ent_stmt = select(KnowledgeEntity).where(
         KnowledgeEntity.tenant_id == ctx.tenant_id,
         KnowledgeEntity.snapshot_id == snapshot_id,
@@ -455,6 +509,7 @@ def traverse_snapshot_knowledge_graph(
 ) -> dict[str, Any]:
     """Execute cycle-safe recursive CTE traversal from `root_entity_id`."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     graph_service = KnowledgeGraphService()
     rel_types = [relationship_type] if relationship_type else None
     return graph_service.traverse_subgraph(
@@ -477,6 +532,7 @@ def get_snapshot_findings(
 ) -> dict[str, Any]:
     """Return findings with their linked cryptographic `evidence_anchors` and review history."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     stmt = select(Finding).where(
         Finding.tenant_id == ctx.tenant_id,
         Finding.snapshot_id == snapshot_id,
@@ -576,6 +632,15 @@ def review_finding_endpoint(
 ) -> dict[str, Any]:
     """Transition a finding's review state and record an immutable `ReviewHistory` entry."""
     db, ctx = ctx_pair
+    if not (
+        ctx.has_permission("finding:review")
+        or ctx.has_permission("project:write")
+        or ctx.org_role_code in ("ORG_OWNER", "ARCHITECT", "REVIEWER")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission 'finding:review' required to review findings.",
+        )
     graph_service = KnowledgeGraphService()
     try:
         updated = graph_service.review_finding(
@@ -633,6 +698,7 @@ def get_snapshot_agent_orchestration(
 ) -> dict[str, Any]:
     """Return AI Agent Orchestration runs, task dependencies, model invocations, and execution telemetry."""
     db, ctx = ctx_pair
+    _verify_snapshot_project_access(db, ctx=ctx, snapshot_id=snapshot_id)
     runs = (
         db.execute(
             select(AnalysisRun).where(

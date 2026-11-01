@@ -249,6 +249,14 @@ class ApiEndpoint(Base, TenantScopedMixin):
     request_schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     response_schema_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
 
+    @property
+    def route_path(self) -> str:
+        return self.route_pattern
+
+    @property
+    def auth_scheme(self) -> str:
+        return "REQUIRED" if self.auth_required_inferred else "NONE"
+
 
 class InfraResource(Base, TenantScopedMixin):
     """E7. Infrastructure-as-Code resources parsed from Dockerfiles, Compose, K8s, Terraform, or CloudFormation (`TENANT_DIRECT`)."""

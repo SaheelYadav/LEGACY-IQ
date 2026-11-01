@@ -49,6 +49,8 @@ from app.models.technical_intelligence import (
 )
 from app.services.agent_orchestrator import TechnicalIntelligenceOrchestrator
 from app.services.knowledge_graph_service import KnowledgeGraphService
+from app.services.requirements_intelligence_service import RequirementsIntelligenceService
+from app.services.testing_modernization_service import TestingModernizationService
 
 
 @dataclass
@@ -640,6 +642,36 @@ class TechnicalIntelligenceService:
                 "doc_sections_count": doc_sections_count,
                 "scc_cycles_count": graph_stats.scc_cycles_count,
             },
+        )
+
+        # Execute Wave 3 Business Rules & Requirements Intelligence (Domain G)
+        req_service = RequirementsIntelligenceService(
+            storage=self.storage,
+            graph_service=self.graph_service,
+            orchestrator=self.orchestrator,
+        )
+        req_service.execute_wave3_pipeline(
+            db,
+            tenant_id=tenant_id,
+            repository_id=repo.id,
+            snapshot_id=snapshot.id,
+            analysis_run_id=analysis_run.id,
+            snapshot_artifacts=pairs,
+        )
+
+        # Execute Wave 4 Testing, Risk, Technical Debt & Modernization Intelligence (Domain H)
+        wave4_service = TestingModernizationService(
+            storage=self.storage,
+            graph_service=self.graph_service,
+            orchestrator=self.orchestrator,
+        )
+        wave4_service.execute_wave4_pipeline(
+            db,
+            tenant_id=tenant_id,
+            application_id=repo.application_id,
+            snapshot=snapshot,
+            analysis_run=analysis_run,
+            snapshot_artifacts=pairs,
         )
 
         return Wave2PipelineSummary(

@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models package (Wave 1 + Wave 2 — 54 Canonical Tables across Domains A, B, C, D, E, F, I, J)."""
+"""SQLAlchemy ORM models package (Wave 1 + Wave 2 + Wave 3 + Wave 4 — 65 Canonical Tables across Domains A, B, C, D, E, F, G, H, I, J)."""
 
 from app.db.base import Base
 from app.models.agent_orchestration import (
@@ -7,6 +7,14 @@ from app.models.agent_orchestration import (
     AgentTaskDependency,
     ModelInvocation,
     PromptTemplate,
+)
+from app.models.business_intelligence import (
+    BusinessDomain,
+    BusinessProcess,
+    BusinessRule,
+    Requirement,
+    RequirementAcceptanceCriterion,
+    RequirementTraceabilityLink,
 )
 from app.models.code_intelligence import (
     AnalysisRun,
@@ -71,6 +79,26 @@ from app.models.technical_intelligence import (
     InfraResource,
     RuntimeObservation,
 )
+from app.models.testing_modernization import (
+    ModernizationRecommendation,
+    TechnicalDebtItem,
+    TestCase,
+    TestCoverageLink,
+    TestSuite,
+)
+from app.models.reporting_governance import (
+    ApprovalRequest,
+    AuditLog,
+    DeletionRequest,
+    IntelligenceReport,
+    IntelligenceReportVersion,
+    QaConversation,
+    QaMessage,
+    ReportExport,
+    RetentionPolicy,
+    TenantSubscription,
+    TenantUsageQuota,
+)
 
 __all__ = [
     "Base",
@@ -126,14 +154,39 @@ __all__ = [
     "FindingEvidenceLink",
     "KnowledgeConflict",
     "ReviewHistory",
-    # Domain I remaining (5)
+    # Domain G (6)
+    "BusinessDomain",
+    "BusinessProcess",
+    "BusinessRule",
+    "Requirement",
+    "RequirementAcceptanceCriterion",
+    "RequirementTraceabilityLink",
+    # Domain H (5)
+    "TestSuite",
+    "TestCase",
+    "TestCoverageLink",
+    "TechnicalDebtItem",
+    "ModernizationRecommendation",
+    # Domain I remaining (7)
     "AgentRun",
     "AgentTaskDependency",
     "PromptTemplate",
     "ModelInvocation",
     "AgentExecutionEvent",
+    "QaConversation",
+    "QaMessage",
     # Domain J (3)
     "EmbeddingModelVersion",
     "DocumentChunk",
     "ArtifactEmbedding",
+    # Domain K (9)
+    "AuditLog",
+    "ApprovalRequest",
+    "RetentionPolicy",
+    "DeletionRequest",
+    "TenantSubscription",
+    "TenantUsageQuota",
+    "IntelligenceReport",
+    "IntelligenceReportVersion",
+    "ReportExport",
 ]

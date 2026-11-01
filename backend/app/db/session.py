@@ -17,12 +17,19 @@ from app.core.config import settings
 
 def build_engine() -> Engine:
     """Create a SQLAlchemy 2.0 engine with safe timeouts and connection pooling."""
+    connect_args: dict[str, Any] = {
+        "connect_timeout": settings.DB_CONNECT_TIMEOUT_SECONDS,
+    }
+    if settings.DB_STATEMENT_TIMEOUT_MS > 0:
+        connect_args["options"] = f"-c statement_timeout={settings.DB_STATEMENT_TIMEOUT_MS}"
     return create_engine(
         settings.DATABASE_URL,
         pool_pre_ping=True,
         pool_size=settings.DB_POOL_SIZE,
         max_overflow=settings.DB_MAX_OVERFLOW,
-        connect_args={"connect_timeout": settings.DB_CONNECT_TIMEOUT_SECONDS},
+        pool_timeout=settings.DB_POOL_TIMEOUT_SECONDS,
+        pool_recycle=settings.DB_POOL_RECYCLE_SECONDS,
+        connect_args=connect_args,
     )
 
 

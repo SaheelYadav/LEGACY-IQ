@@ -18,15 +18,21 @@ from app.api.deps import (
     ROLE_CODE_TO_UUID,
     get_tenant_context,
 )
+from app.core.config import settings
 from app.core.security import (
     ROLE_ORG_OWNER_ID,
+    SecurityViolationError,
     TenantContext,
+    create_access_token,
+    verify_and_activate_tenant_context,
 )
 from app.db.session import activate_tenant_rls, get_db
 from app.models.identity import Organization, OrganizationMembership, Role, User
 from app.models.ingestion import Repository, RepositorySnapshot
 from app.models.projects import Application, Project, ProjectMembership, Workspace
 from app.schemas.platform import (
+    AuthTokenRequest,
+    AuthTokenResponse,
     BootstrapContextResponse,
     MembershipCreateRequest,
     OrganizationCreateRequest,
@@ -206,6 +212,12 @@ def bootstrap_default_context(db: Session = Depends(get_db)) -> BootstrapContext
 
     db.commit()
 
+    token = create_access_token(
+        user_id=user.id,
+        tenant_id=org.id,
+        role_code="ORG_OWNER",
+    )
+
     return BootstrapContextResponse(
         tenant_id=org.id,
         organization_name=org.display_name,
@@ -222,6 +234,50 @@ def bootstrap_default_context(db: Session = Depends(get_db)) -> BootstrapContext
         default_repository_id=repo.id,
         default_repository_name=repo.name,
         latest_snapshot_id=latest_snapshot.id if latest_snapshot else None,
+        access_token=token,
+        token_type="Bearer",
+        expires_in_seconds=settings.AUTH_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
+@router.post(
+    "/auth/token",
+    response_model=AuthTokenResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Issue a signed JWT access token for a verified tenant member",
+)
+def issue_auth_token(
+    payload: AuthTokenRequest,
+    db: Session = Depends(get_db),
+) -> AuthTokenResponse:
+    """
+    Verify that `user_id` is an active member of `tenant_id` and return a signed
+    HS256 JWT access token with expiration (`exp`).
+    """
+    try:
+        ctx = verify_and_activate_tenant_context(
+            db,
+            user_id=payload.user_id,
+            tenant_id=payload.tenant_id,
+        )
+    except SecurityViolationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    token = create_access_token(
+        user_id=ctx.user_id,
+        tenant_id=ctx.tenant_id,
+        role_code=ctx.org_role_code,
+    )
+    return AuthTokenResponse(
+        access_token=token,
+        token_type="Bearer",
+        expires_in_seconds=settings.AUTH_TOKEN_EXPIRE_MINUTES * 60,
+        tenant_id=ctx.tenant_id,
+        user_id=ctx.user_id,
+        role_code=ctx.org_role_code,
     )
 
 
